@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "";
 const DEFAULT_URL = "https://s3.waw3-1.cloudferro.com/emodnet/emodnet_biology/12639/marine_biodiversity_observations_2026-02-26.parquet";
 const COLUMN_PAGE_SIZE = 10;
 const ROW_PAGE_SIZE = 50;

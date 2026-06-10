@@ -1,0 +1,7 @@
+{
+  "url_occ_2026_05_13": "https://s3.waw3-1.cloudferro.com/emodnet/emodnet_biology/12639/marine_biodiversity_observations_occurrence_2026-05-13.parquet",
+  "url_occ_2026_02_26": "https://s3.waw3-1.cloudferro.com/emodnet/emodnet_biology/12639/marine_biodiversity_observations_2026-02-26.parquet",
+  "url_mof_2026_05_13": "https://s3.waw3-1.cloudferro.com/emodnet/emodnet_biology/12639/marine_biodiversity_observations_measurement_or_fact_2026-05-13.parquet",
+  "url_dna_2026_05_13": "https://s3.waw3-1.cloudferro.com/emodnet/emodnet_biology/12639/marine_biodiversity_observations_dna_2026-05-13.parquet",
+  "url_ETN_reubens": "https://www.lifewatch.be/etn/parquet/detections/2010_phd_reubens/2010_phd_reubens_detections.parquet"
+}
