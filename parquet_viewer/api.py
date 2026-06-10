@@ -10,7 +10,15 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .view_service_beta import DuckDBViewService
+try:
+    # Normal package import when used as a module/package
+    from .view_service import ParquetViewService
+    from .view_service_beta import DuckDBViewService
+except Exception:
+    # Allow running the file directly (python api.py) where relative imports
+    # would fail; fall back to importing the sibling modules by name.
+    from view_service import ParquetViewService
+    from view_service_beta import DuckDBViewService
 
 
 class ViewRequest(BaseModel):
@@ -71,6 +79,45 @@ def _to_json_safe(value: Any) -> Any:
     return str(value)
 
 
+def _schema_columns(schema: Any) -> list[dict[str, str]]:
+    if isinstance(schema, Mapping):
+        return [{"name": str(name), "dtype": str(dtype)} for name, dtype in schema.items()]
+
+    return [{"name": field.name, "dtype": str(field.type)} for field in schema]
+
+
+def _get_schema_columns(parquet_url: str) -> list[dict[str, str]]:
+    try:
+        schema = DuckDBViewService(parquet_url).get_schema()
+    except Exception:
+        schema = ParquetViewService(parquet_url).get_schema()
+
+    return _schema_columns(schema)
+
+
+def _get_view_table(
+    parquet_url: str,
+    columns: list[str] | None,
+    filters: dict[str, str] | None,
+    max_rows: int,
+    row_offset: int,
+):
+    try:
+        return DuckDBViewService(parquet_url).get_view(
+            columns=columns,
+            filters=filters,
+            max_rows=max_rows,
+            row_offset=row_offset,
+        )
+    except Exception:
+        fallback = ParquetViewService(parquet_url).get_view(
+            columns=columns,
+            filters=filters,
+            max_rows=max_rows + row_offset,
+        )
+        return fallback.slice(row_offset, max_rows)
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -79,12 +126,12 @@ def health() -> dict[str, str]:
 @app.post("/view", response_model=ViewResponse)
 def get_view_endpoint(request: ViewRequest) -> dict[str, Any]:
     try:
-        service = DuckDBViewService(request.parquet_url)
-        table = service.get_view(
-            columns=request.columns,
-            filters=request.filters,
-            max_rows=request.max_rows,
-            row_offset=request.row_offset,
+        table = _get_view_table(
+            request.parquet_url,
+            request.columns,
+            request.filters,
+            request.max_rows,
+            request.row_offset,
         )
         columnar_data = {
             column_name: table.column(column_name).to_pylist()
@@ -105,10 +152,7 @@ def get_view_endpoint(request: ViewRequest) -> dict[str, Any]:
 @app.post("/schema", response_model=SchemaResponse)
 def get_schema_endpoint(request: SchemaRequest) -> dict[str, list[dict[str, str]]]:
     try:
-        service = DuckDBViewService(request.parquet_url)
-        schema = service.get_schema()
-        columns = [{"name": name, "dtype": dtype} for name, dtype in schema.items()]
-        return {"columns": columns}
+        return {"columns": _get_schema_columns(request.parquet_url)}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

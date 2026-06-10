@@ -1,0 +1,31 @@
+configuration:
+  containerImage:
+    imageIsBuilt: true
+    tag: docker.io/willemboone/parquet-viewer:latest
+    path: ""
+  network:
+    port: 8000
+metadata:
+  id: parquet-viewer
+  version: 0.1.0
+  description: Parquet-viewer
+  icon: https://dto-bioflow.eu/sites/default/files/2025-05/Logo%20DTO-Bioflow%20Positive%20small.png
+  home: https://willem0boone.github.io/parquet_viewer/index.html
+  keywords: []
+  appVersion: ""
+git:
+  enabled: true
+  name: willem.boone
+  email: willem.boone@vliz.be
+  cache: "0"
+  token: 
+  repository: ""
+  branch: ""
+serviceInputs: []
+resources:
+  requests:
+    cpu: 2000m
+    memory: 8Gi
+  limits:
+    cpu: 7200m
+    memory: 28Gi
