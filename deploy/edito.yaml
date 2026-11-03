@@ -8,8 +8,8 @@ configuration:
   network:
     port: 8000
 metadata:
-  id: parquet-viewer
-  version: 0.1.0
+  id: dto-bioflow-parquet-viewer
+  version: 1.1.0
   description: Parquet-viewer
   icon: https://dto-bioflow.eu/sites/default/files/2025-05/Logo%20DTO-Bioflow%20Positive%20small.png
   home: https://github.com/EDITO-Infra/parquet_viewer
