@@ -23,10 +23,10 @@ except Exception:
 
 class ViewRequest(BaseModel):
     parquet_url: str = Field(..., min_length=1)
-    max_rows: int = Field(default=25, ge=1, le=200)
+    max_rows: int = Field(default=25, ge=1, le=500)
     row_offset: int = Field(default=0, ge=0)
     columns: list[str] | None = None
-    filters: dict[str, str] | None = None
+    filters: dict[str, Any] | None = None
 
 
 class SchemaRequest(BaseModel):
@@ -98,7 +98,7 @@ def _get_schema_columns(parquet_url: str) -> list[dict[str, str]]:
 def _get_view_table(
     parquet_url: str,
     columns: list[str] | None,
-    filters: dict[str, str] | None,
+    filters: dict[str, Any] | None,
     max_rows: int,
     row_offset: int,
 ):
@@ -196,4 +196,3 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("parquet_viewer.api:app", host="127.0.0.1", port=8000, reload=True)
-

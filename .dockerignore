@@ -38,3 +38,4 @@ docs/source/_build/
 # Frontend artifacts
 
 *.parquet
+.parquet_viewer_backend.pid

@@ -105,7 +105,20 @@ def _build_filter_expression(
         field_type = dataset.schema.field(column_name).type
         is_string_type = pa.types.is_string(field_type) or pa.types.is_large_string(field_type)
 
-        if isinstance(filter_value, (list, tuple, set, frozenset)):
+        if isinstance(filter_value, Mapping) and ("min" in filter_value or "max" in filter_value):
+            conditions = []
+            minimum = filter_value.get("min")
+            maximum = filter_value.get("max")
+            if minimum is not None:
+                conditions.append(pc.field(column_name) >= minimum)
+            if maximum is not None:
+                conditions.append(pc.field(column_name) <= maximum)
+            if not conditions:
+                continue
+            condition = conditions[0]
+            for bound_condition in conditions[1:]:
+                condition = condition & bound_condition
+        elif isinstance(filter_value, (list, tuple, set, frozenset)):
             values = list(filter_value)
             if not values:
                 raise ValueError(
@@ -122,4 +135,3 @@ def _build_filter_expression(
         expression = condition if expression is None else expression & condition
 
     return expression
-

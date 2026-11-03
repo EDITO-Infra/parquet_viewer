@@ -12,6 +12,8 @@ docs/source/_build/
 
 # Frontend artifacts
 frontend/node_modules/
+frontend_dist/
+.parquet_viewer_backend.pid
 frontend/dist/
 
 *.parquet
