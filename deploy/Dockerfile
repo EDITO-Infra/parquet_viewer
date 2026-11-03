@@ -21,6 +21,7 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 COPY parquet_viewer ./parquet_viewer
+COPY main.py ./
 COPY --from=frontend-builder /frontend/dist ./frontend_dist
 
 EXPOSE 8000

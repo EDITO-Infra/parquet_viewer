@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE = "";
-const DEFAULT_URL = "https://s3.waw3-1.cloudferro.com/emodnet/emodnet_biology/12639/marine_biodiversity_observations_2026-02-26.parquet";
+const DEFAULT_URL = "https://s3.waw3-1.cloudferro.com/emodnet/emodnet_biology/12639/marine_biodiversity_observations_occurrence_2026-09-30.parquet";
 const COLUMN_PAGE_SIZE = 10;
-const ROW_PAGE_SIZE = 50;
+const ROW_PAGE_OPTIONS = [50, 100, 200, 500];
 
 function compareColumnNames(a, b) {
   return a.localeCompare(b, undefined, { sensitivity: "base" });
@@ -16,6 +16,7 @@ export default function App() {
   const [draftFilterValues, setDraftFilterValues] = useState({});
   const [appliedFilterValues, setAppliedFilterValues] = useState({});
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [columnSearch, setColumnSearch] = useState("");
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
@@ -24,6 +25,9 @@ export default function App() {
   const [activeFilters, setActiveFilters] = useState({});
   const [columnOffset, setColumnOffset] = useState(0);
   const [rowOffset, setRowOffset] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
+  const [columnWidths, setColumnWidths] = useState({});
+  const resizeRef = useRef(null);
 
   const dropdownRef = useRef(null);
   const loadedSchemaUrlRef = useRef("");
@@ -32,6 +36,13 @@ export default function App() {
     () => [...schemaColumns].sort((left, right) => compareColumnNames(left.name, right.name)),
     [schemaColumns]
   );
+  const filteredSchemaColumns = useMemo(() => {
+    const search = columnSearch.trim().toLowerCase();
+    if (!search) {
+      return sortedSchemaColumns;
+    }
+    return sortedSchemaColumns.filter((column) => column.name.toLowerCase().includes(search));
+  }, [columnSearch, sortedSchemaColumns]);
   const allColumnNames = useMemo(() => sortedSchemaColumns.map((item) => item.name), [sortedSchemaColumns]);
   const schemaByName = useMemo(
     () => Object.fromEntries(schemaColumns.map((item) => [item.name, item])),
@@ -43,7 +54,7 @@ export default function App() {
   const canGoPrevious = columnOffset > 0;
   const canGoNext = columnOffset + COLUMN_PAGE_SIZE < activeColumns.length;
   const canGoPreviousRows = rowOffset > 0;
-  const canGoNextRows = Boolean(result) && result.rows.length === ROW_PAGE_SIZE;
+  const canGoNextRows = Boolean(result) && result.rows.length === rowsPerPage;
 
   useEffect(() => {
     function onClickOutside(event) {
@@ -54,6 +65,30 @@ export default function App() {
 
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  useEffect(() => {
+    function handleMouseMove(event) {
+      if (!resizeRef.current) {
+        return;
+      }
+
+      const { column, startX, startWidth } = resizeRef.current;
+      const width = Math.max(100, startWidth + event.clientX - startX);
+      setColumnWidths((previous) => ({ ...previous, [column]: width }));
+    }
+
+    function handleMouseUp() {
+      resizeRef.current = null;
+      document.body.classList.remove("is-resizing-column");
+    }
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
   }, []);
 
   async function fetchSchema(url) {
@@ -85,6 +120,17 @@ export default function App() {
     );
   }
 
+  function isNumericDtype(dtype) {
+    const normalized = String(dtype || "").toLowerCase();
+    return (
+      normalized.includes("int") ||
+      normalized.includes("float") ||
+      normalized.includes("double") ||
+      normalized.includes("decimal") ||
+      normalized.includes("numeric")
+    );
+  }
+
   function buildFiltersForRequest(selectedColumns, filtersByColumn) {
     const selectedSet = new Set(selectedColumns);
     const filters = {};
@@ -92,18 +138,27 @@ export default function App() {
       if (!selectedSet.has(columnName)) {
         return;
       }
-      const rawValue = filtersByColumn[columnName];
-      if (typeof rawValue !== "string") {
-        return;
-      }
-      const trimmed = rawValue.trim();
-      if (!trimmed) {
-        return;
-      }
-
       const columnMeta = schemaByName[columnName];
-      if (columnMeta && isStringDtype(columnMeta.dtype)) {
-        filters[columnName] = trimmed;
+      const rawValue = filtersByColumn[columnName];
+      if (columnMeta && isStringDtype(columnMeta.dtype) && typeof rawValue === "string") {
+        const trimmed = rawValue.trim();
+        if (trimmed) {
+          filters[columnName] = trimmed;
+        }
+      } else if (columnMeta && isNumericDtype(columnMeta.dtype) && rawValue) {
+        const numericFilters = {};
+        ["min", "max"].forEach((operator) => {
+          const value = rawValue[operator]?.trim();
+          if (value) {
+            const number = Number(value);
+            if (Number.isFinite(number)) {
+              numericFilters[operator] = number;
+            }
+          }
+        });
+        if (Object.keys(numericFilters).length > 0) {
+          filters[columnName] = numericFilters;
+        }
       }
     });
     return filters;
@@ -120,7 +175,7 @@ export default function App() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         parquet_url: trimmedUrl,
-        max_rows: ROW_PAGE_SIZE,
+        max_rows: rowsPerPage,
         row_offset: offsetRows,
         columns: columnsToRender,
         filters: filtersToApply,
@@ -223,11 +278,53 @@ export default function App() {
     setDraftFilterValues({});
   }
 
-  function updateDraftFilter(name, value) {
-    setDraftFilterValues((previous) => ({
-      ...previous,
-      [name]: value,
-    }));
+  function updateDraftFilter(name, value, operator = null) {
+    if (operator === null) {
+      setDraftFilterValues((previous) => ({
+        ...previous,
+        [name]: value,
+      }));
+      return;
+    }
+
+    setDraftFilterValues((previous) => {
+      const current = previous[name] || { min: "", max: "" };
+      return { ...previous, [name]: { ...current, [operator]: value } };
+    });
+  }
+
+  function validateNumericFilter(name, operator) {
+    setDraftFilterValues((previous) => {
+      const current = previous[name];
+      if (!current || !current.min.trim() || !current.max.trim()) {
+        return previous;
+      }
+
+      const minimum = Number(current.min);
+      const maximum = Number(current.max);
+      if (
+        Number.isFinite(minimum) &&
+        Number.isFinite(maximum) &&
+        minimum > maximum
+      ) {
+        return {
+          ...previous,
+          [name]: { ...current, [operator]: "" },
+        };
+      }
+
+      return previous;
+    });
+  }
+
+  function startColumnResize(event, column) {
+    event.preventDefault();
+    resizeRef.current = {
+      column,
+      startX: event.clientX,
+      startWidth: columnWidths[column] || 160,
+    };
+    document.body.classList.add("is-resizing-column");
   }
 
   async function handleRenderClick(closeDropdown = true) {
@@ -330,7 +427,7 @@ export default function App() {
       return;
     }
 
-    const nextRowOffset = rowOffset + ROW_PAGE_SIZE;
+    const nextRowOffset = rowOffset + rowsPerPage;
     setRendering(true);
     setError("");
     try {
@@ -369,9 +466,21 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <header className="site-header">
+        <h1>DTO-Bioflow parquet viewer</h1>
+        <a
+          href="https://dto-bioflow.eu/"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Visit DTO-Bioflow"
+        >
+          <img
+            src="https://dto-bioflow-data.lab.dive.edito.eu/Logo_BIO-Flow2023_Final_Negative.png"
+            alt="DTO-Bioflow"
+          />
+        </a>
+      </header>
       <header className="top-panel">
-        <h1>Parquet URL Viewer</h1>
-
         <div className="form-row">
           <input
             type="text"
@@ -393,9 +502,26 @@ export default function App() {
               loadedSchemaUrlRef.current = "";
             }}
           />
-          <button type="button" className="render-button" onClick={handleRenderClick} disabled={renderDisabled}>
-            Render
-          </button>
+          <div className="render-actions">
+            <button type="button" className="render-button" onClick={handleRenderClick} disabled={renderDisabled}>
+              Render
+            </button>
+            <label className="rows-control">
+              <span>Show rows</span>
+              <select
+                value={rowsPerPage}
+                onChange={(event) => {
+                  setRowsPerPage(Number(event.target.value));
+                  setRowOffset(0);
+                }}
+                disabled={rendering}
+              >
+                {ROW_PAGE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           {rendering && (
             <span className="loading-indicator">Rendering...</span>
           )}
@@ -413,6 +539,15 @@ export default function App() {
 
           {dropdownOpen && (
             <div className="columns-dropdown">
+              <div className="columns-search">
+                <input
+                  type="search"
+                  value={columnSearch}
+                  onChange={(event) => setColumnSearch(event.target.value)}
+                  placeholder="Search columns"
+                  aria-label="Search columns"
+                />
+              </div>
               <div className="columns-actions">
                 <button type="button" onClick={handleSelectAll} disabled={rendering || totalCount === 0}>
                   Select all
@@ -433,12 +568,13 @@ export default function App() {
                   <span>Column</span>
                   <span>Filter</span>
                 </div>
-                {sortedSchemaColumns.map((column) => {
+                {filteredSchemaColumns.map((column) => {
                   const selected = selectedColumnsSet.has(column.name);
                   const stringColumn = isStringDtype(column.dtype);
-                  const draftFilter = draftFilterValues[column.name] || "";
-                  const appliedFilter = appliedFilterValues[column.name] || "";
-                  const pendingFilter = draftFilter !== appliedFilter;
+                  const numericColumn = isNumericDtype(column.dtype);
+                  const draftFilter = draftFilterValues[column.name] || (numericColumn ? { min: "", max: "" } : "");
+                  const appliedFilter = appliedFilterValues[column.name] || (numericColumn ? { min: "", max: "" } : "");
+                  const pendingFilter = JSON.stringify(draftFilter) !== JSON.stringify(appliedFilter);
 
                   return (
                     <div key={column.name} className={`columns-item${selected ? " is-selected" : ""}`}>
@@ -452,17 +588,40 @@ export default function App() {
                       <div className="columns-main">
                         <span className="columns-name">{column.name}</span>
                       </div>
-                      <input
-                        type="text"
-                        className={`column-filter-input${pendingFilter ? " is-pending" : ""}`}
-                        value={draftFilter}
-                        onChange={(event) => updateDraftFilter(column.name, event.target.value)}
-                        placeholder={stringColumn ? "Contains text" : "Filter not implemented"}
-                        disabled={!selected || !stringColumn || rendering}
-                      />
+                      {stringColumn ? (
+                        <input
+                          type="text"
+                          className={`column-filter-input${pendingFilter ? " is-pending" : ""}`}
+                          value={draftFilter}
+                          onChange={(event) => updateDraftFilter(column.name, event.target.value)}
+                          placeholder="Contains text"
+                          disabled={!selected || rendering}
+                        />
+                      ) : numericColumn ? (
+                        <div className="numeric-filter-inputs">
+                          {["min", "max"].map((operator) => (
+                            <input
+                              key={operator}
+                              type="number"
+                              className={`column-filter-input${pendingFilter ? " is-pending" : ""}`}
+                              value={draftFilter[operator]}
+                              onChange={(event) => updateDraftFilter(column.name, event.target.value, operator)}
+                              onBlur={() => validateNumericFilter(column.name, operator)}
+                              placeholder={operator}
+                              aria-label={`${column.name} ${operator}`}
+                              disabled={!selected || rendering}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="filter-not-available">Not available</span>
+                      )}
                     </div>
                   );
                 })}
+                {filteredSchemaColumns.length === 0 && (
+                  <div className="columns-no-results">No matching columns.</div>
+                )}
               </div>
             </div>
           )}
@@ -500,10 +659,23 @@ export default function App() {
         {result ? (
           <div className="table-wrap">
             <table>
+              <colgroup>
+                {result.columns.map((col) => (
+                  <col key={col} style={{ width: `${columnWidths[col] || 160}px` }} />
+                ))}
+              </colgroup>
               <thead>
                 <tr>
                   {result.columns.map((col) => (
-                    <th key={col} className="column-header-cell">{col}</th>
+                    <th key={col} className="column-header-cell">
+                      <span className="column-header-label">{col}</span>
+                      <span
+                        className="column-resize-handle"
+                        onMouseDown={(event) => startColumnResize(event, col)}
+                        role="separator"
+                        aria-label={`Resize ${col} column`}
+                      />
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -528,6 +700,9 @@ export default function App() {
           </div>
         )}
       </section>
+      <footer className="site-footer">
+        Developed by Willem Boone - VLIZ Flanders Marine Institute 2026.
+      </footer>
     </div>
   );
 }

@@ -53,7 +53,18 @@ def _build_where_clause(filters: FilterInput) -> tuple[str, tuple]:
     for col_name, value in filter_items:
         col_safe = f'"{col_name}"'
 
-        if isinstance(value, (list, tuple, set, frozenset)):
+        if isinstance(value, Mapping) and ("min" in value or "max" in value):
+            predicates = []
+            params = []
+            for operator, sql_operator in (("min", ">="), ("max", "<=")):
+                operand = value.get(operator)
+                if operand is not None:
+                    predicates.append(f"{col_safe} {sql_operator} ?")
+                    params.append(operand)
+            if not predicates:
+                continue
+            conditions.append((" AND ".join(predicates), params))
+        elif isinstance(value, (list, tuple, set, frozenset)):
             values = list(value)
             if not values:
                 raise ValueError(f"Filter column '{col_name}' received an empty value list")
@@ -204,9 +215,6 @@ def get_view(
 def get_schema(parquet: DatasetInput) -> dict[str, str]:
     """Convenience entrypoint for DuckDB schema retrieval."""
     return DuckDBViewService(parquet).get_schema()
-
-
-
 
 
 
