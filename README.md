@@ -56,7 +56,7 @@ Replace the placeholders in the commands below. For example:
 
 ```text
 docker_user_name = willemboone
-docker_image_name = bioflow_data
+docker_image_name = parquet-viewer
 version = v1.0.0
 ```
 
